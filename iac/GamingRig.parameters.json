@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "autoShutdownTime": {
+        "value": "19:00"
+    },
+    "vmName":{
+        "value": "vm-vdi-video-000"
+    },
+    "vmSize":{
+        "value": "Standard_NV6_Promo"
+    },
+    "vmImagePublisher":{
+        "value": "MicrosoftWindowsDesktop"
+    },
+    "vmImageOffer":{
+        "value": "Windows-10"
+    },
+    "vmImageSku":{
+        "value": "19h2-pro"
+    },
+    "vmImageVersion":{
+        "value": "latest"
+    },
+    "timeZone": {
+        "value": "Eastern Standard Time"
+    },
+    "dataDiskType":{
+        "value": "StandardSSD_LRS"
+    },
+    "virtualNetworkRgName":{
+        "value": "rg-demo-network"
+    },
+    "virtualNetworkName":{
+        "value": "vnet-demo-eastus-000"
+    },
+    "subnetName":{
+        "value": "snet-vdi-video"
+    },
+    "diagnosticsStorageAccountRGName":{
+        "value": "rg-demo-storage"
+    },
+    "diagnosticsStorageAccountName":{
+        "value": "stdiageastusdemo321"
+    }
+  }
+}

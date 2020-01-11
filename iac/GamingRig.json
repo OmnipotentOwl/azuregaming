@@ -1,0 +1,253 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "adminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "The admin user name of the VM"
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The admin password of the VM"
+      }
+    },
+    "autoShutdownTime": {
+      "type": "string"
+    },
+    "vmName": {
+      "type": "string"
+    },
+    "vmSize":{
+      "type":"string",
+      "defaultValue": "Standard_NV6",
+      "allowedValues": [
+          "Standard_NV6",
+          "Standard_NV12",
+          "Standard_NV24",
+          "Standard_NV6_Promo"
+      ]
+    },
+    "vmImagePublisher":{
+      "type": "string"
+    },
+    "vmImageOffer":{
+      "type": "string"
+    },
+    "vmImageSku":{
+      "type":"string"
+    },
+    "vmImageVersion":{
+      "type":"string"
+    },
+    "timeZone":{
+      "type": "string"
+    },
+    "dataDiskType":{
+      "type": "string",
+      "allowedValues":[
+        "Standard_LRS",
+        "StandardSSD_LRS"
+      ]
+    },
+    "virtualNetworkRgName": {
+      "type": "string"
+    },
+    "virtualNetworkName": {
+      "type": "string"
+    },
+    "subnetName": {
+      "type": "string"
+    },
+    "diagnosticsStorageAccountRGName":{
+      "type":"string"
+    },
+    "diagnosticsStorageAccountName":{
+      "type": "string"
+    }
+  },
+  "variables":{
+    "pipName": "[concat('pip-',parameters('vmName'))]",
+    "pipId": "[resourceId('Microsoft.Network/publicIPAddresses/', variables('pipName'))]",
+    "subnetRef": "[resourceId(parameters('virtualNetworkRgName'),'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))]",
+    "networkInterfaceName": "[concat(parameters('vmName'),'-nic')]",
+    "dataDiskSize": 512
+  },
+  "resources":[
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "[variables('pipName')]",
+      "apiVersion": "2018-06-01",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "name": "[variables('networkInterfaceName')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/publicIPAddresses/', variables('pipName'))]"
+      ],
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2018-01-01",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "enableAcceleratedNetworking": false,
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "subnet": {
+                "id": "[variables('subnetRef')]"
+              },
+              "publicIPAddress": "[variables('pipId')]",
+              "privateIPAllocationMethod": "Dynamic"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.DevTestLab/schedules",
+      "name": "[concat('shutdown-computevm-',parameters('vmName'))]",
+      "apiVersion": "2018-10-15-preview",
+      "location": "[resourceGroup().location]",
+      "tags": {},
+      "dependsOn":[
+        "[concat('Microsoft.Compute/virtualMachines/',parameters('vmName'))]"
+      ],
+      "properties": {
+        "status": "Enabled",
+        "taskType": "ComputeVmShutdownTask",
+        "dailyRecurrence": {
+          "time": "[parameters('autoShutdownTime')]"
+        },
+        "timeZoneId": "Eastern Standard Time",
+        "targetResourceId": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]",
+        "notificationSettings": {
+          "status": "Enabled",
+          "notificationLocale": "en",
+          "timeInMinutes": "30"
+        }
+      }
+    },
+    {
+      "name": "[parameters('vmName')]",
+      "tags": {
+      },
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2019-07-01",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/networkInterfaces/', variables('networkInterfaceName'))]"
+      ],
+      "properties": {
+        "osProfile": {
+          "computerName": "[parameters('vmName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "windowsConfiguration": {
+            "provisionVmAgent": true,
+            "enableAutomaticUpdates": true,
+            "timeZone": "[parameters('timeZone')]"
+          }
+        },
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[parameters('vmImagePublisher')]",
+            "offer": "[parameters('vmImageOffer')]",
+            "sku": "[parameters('vmImageSku')]",
+            "version": "[parameters('vmImageVersion')]"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "name": "[concat(parameters('vmName'),'-osdisk')]",
+            "managedDisk": {
+              "storageAccountType": "StandardSSD_LRS"
+            }
+          },
+          "dataDisks": [
+              {
+                "name": "[concat(parameters('vmName'),'-datadisk-','0')]",
+                "diskSizeGB": "[variables('dataDiskSize')]",
+                "lun": 0,
+                "createOption": "Empty",
+                "managedDisk": {
+                  "storageAccountType": "[parameters('dataDiskType')]"
+                }
+              }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('vmName'),'-nic'))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[reference(resourceId(parameters('diagnosticsStorageAccountRGName'), 'Microsoft.Storage/storageAccounts', parameters('diagnosticsStorageAccountName')), '2015-06-15').primaryEndpoints['blob']]"
+          }
+        }
+      }
+    },
+    {
+        "name": "[concat(parameters('vmName'),'/nvidiagpu')]",
+        "type": "Microsoft.Compute/virtualMachines/extensions",
+        "apiVersion": "2015-06-15",
+        "location": "[resourceGroup().location]",
+        "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', parameters('vmName'))]"
+        ],
+        "properties": {
+            "publisher": "Microsoft.HpcCompute",
+            "type": "NvidiaGpuDriverWindows",
+            "typeHandlerVersion": "1.2",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+            }
+        }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('vmName'),'/antimalware')]",
+      "apiVersion": "2017-03-30",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [ 
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('vmName'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Security",
+        "type": "IaaSAntimalware",
+        "typeHandlerVersion": "1.3",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "AntimalwareEnabled": true,
+          "Exclusions": {
+            "Paths": "",
+            "Extensions": "",
+            "Processes": ""
+          },
+          "RealtimeProtectionEnabled": "true",
+          "ScheduledScanSettings": {
+            "isEnabled": "true",
+            "scanType": "Quick",
+            "day": "7",
+            "time": "120"
+          }
+        },
+        "protectedSettings": null
+      }
+    }
+  ]
+}
