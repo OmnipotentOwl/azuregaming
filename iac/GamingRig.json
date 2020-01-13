@@ -2,19 +2,22 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "adminUsername": {
+    "adminUsernameSecret": {
       "type": "string",
       "metadata": {
-        "description": "The admin user name of the VM"
+        "description": "The secret name for the admin user name of the VM"
       }
     },
-    "adminPassword": {
-      "type": "securestring",
+    "adminPasswordSecret": {
+      "type": "string",
       "metadata": {
-        "description": "The admin password of the VM"
+        "description": "The secret name for the admin password of the VM"
       }
     },
     "autoShutdownTime": {
+      "type": "string"
+    },
+    "autoShutdownAlertRecipient":{
       "type": "string"
     },
     "vmName": {
@@ -66,14 +69,32 @@
     },
     "diagnosticsStorageAccountName":{
       "type": "string"
+    },
+    "vaultName": {
+      "type": "string",
+      "metadata": {
+          "description": "The name of the keyvault that contains the secret."
+      }
+    },
+    "vaultResourceGroupName": {
+      "type": "string",
+      "metadata": {
+          "description": "The name of the resource group that contains the keyvault."
+      }
+    },
+    "vaultSubscription": {
+      "type": "string",
+      "defaultValue": "[subscription().subscriptionId]",
+      "metadata": {
+          "description": "The name of the subscription that contains the keyvault."
+      }
     }
   },
   "variables":{
     "pipName": "[concat('pip-',parameters('vmName'))]",
     "pipId": "[resourceId('Microsoft.Network/publicIPAddresses/', variables('pipName'))]",
     "subnetRef": "[resourceId(parameters('virtualNetworkRgName'),'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))]",
-    "networkInterfaceName": "[concat(parameters('vmName'),'-nic')]",
-    "dataDiskSize": 512
+    "networkInterfaceName": "[concat(parameters('vmName'),'-nic')]"
   },
   "resources":[
     {
@@ -105,7 +126,9 @@
               "subnet": {
                 "id": "[variables('subnetRef')]"
               },
-              "publicIPAddress": "[variables('pipId')]",
+              "publicIPAddress": {
+                "id":"[variables('pipId')]"
+              },
               "privateIPAllocationMethod": "Dynamic"
             }
           }
@@ -113,13 +136,184 @@
       }
     },
     {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2019-10-01",
+      "name": "deployVMWithKV",
+      "dependsOn":[
+        "[concat('Microsoft.Network/networkInterfaces/', variables('networkInterfaceName'))]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template":{
+          "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "adminUsername": {
+              "type":"string"
+            },
+            "adminPassword": {
+                "type": "securestring"
+            },
+            "diagnosticsStorageAccountRGName":{
+              "type":"string"
+            },
+            "diagnosticsStorageAccountName":{
+              "type": "string"
+            },
+            "vmName": {
+              "type": "string"
+            },
+            "vmSize":{
+              "type":"string"
+            },
+            "vmImagePublisher":{
+              "type": "string"
+            },
+            "vmImageOffer":{
+              "type": "string"
+            },
+            "vmImageSku":{
+              "type":"string"
+            },
+            "vmImageVersion":{
+              "type":"string"
+            },
+            "timeZone":{
+              "type": "string"
+            },
+            "dataDiskType":{
+              "type": "string"
+            }
+          },
+          "variables": {
+            "vmNameOS": "[take(parameters('vmName'),15)]",
+            "dataDiskSize": 512
+          },
+          "resources":[
+            {
+              "name": "[parameters('vmName')]",
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2019-07-01",
+              "location": "[resourceGroup().location]",
+              "dependsOn": [
+              ],
+              "properties": {
+                "osProfile": {
+                  "computerName": "[variables('vmNameOS')]",
+                  "adminUsername": "[parameters('adminUsername')]",
+                  "adminPassword": "[parameters('adminPassword')]",
+                  "windowsConfiguration": {
+                    "provisionVmAgent": true,
+                    "enableAutomaticUpdates": true,
+                    "timeZone": "[parameters('timeZone')]"
+                  }
+                },
+                "hardwareProfile": {
+                  "vmSize": "[parameters('vmSize')]"
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "[parameters('vmImagePublisher')]",
+                    "offer": "[parameters('vmImageOffer')]",
+                    "sku": "[parameters('vmImageSku')]",
+                    "version": "[parameters('vmImageVersion')]"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "name": "[concat(parameters('vmName'),'-osdisk')]",
+                    "managedDisk": {
+                      "storageAccountType": "StandardSSD_LRS"
+                    }
+                  },
+                  "dataDisks": [
+                      {
+                        "name": "[concat(parameters('vmName'),'-datadisk-','0')]",
+                        "diskSizeGB": "[variables('dataDiskSize')]",
+                        "lun": 0,
+                        "createOption": "Empty",
+                        "managedDisk": {
+                          "storageAccountType": "[parameters('dataDiskType')]"
+                        }
+                      }
+                  ]
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('vmName'),'-nic'))]"
+                    }
+                  ]
+                },
+                "diagnosticsProfile": {
+                  "bootDiagnostics": {
+                    "enabled": true,
+                    "storageUri": "[reference(resourceId(parameters('diagnosticsStorageAccountRGName'), 'Microsoft.Storage/storageAccounts', parameters('diagnosticsStorageAccountName')), '2015-06-15').primaryEndpoints['blob']]"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "parameters":{
+          "adminUsername":{
+            "reference": {
+              "keyVault": {
+                  "id": "[resourceId(parameters('vaultSubscription'), parameters('vaultResourceGroupName'), 'Microsoft.KeyVault/vaults', parameters('vaultName'))]"
+              },
+              "secretName": "[parameters('adminUsernameSecret')]"
+            }
+          },
+          "adminPassword":{
+            "reference": {
+              "keyVault": {
+                  "id": "[resourceId(parameters('vaultSubscription'), parameters('vaultResourceGroupName'), 'Microsoft.KeyVault/vaults', parameters('vaultName'))]"
+              },
+              "secretName": "[parameters('adminPasswordSecret')]"
+            }
+          },
+          "diagnosticsStorageAccountRGName":{
+            "value": "[parameters('diagnosticsStorageAccountRGName')]"
+          },
+          "diagnosticsStorageAccountName":{
+            "value": "[parameters('diagnosticsStorageAccountName')]"
+          },
+          "vmName":{
+            "value": "[parameters('vmName')]"
+          },
+          "vmSize":{
+            "value": "[parameters('vmSize')]"
+          },
+          "vmImagePublisher":{
+            "value": "[parameters('vmImagePublisher')]"
+          },
+          "vmImageOffer":{
+            "value": "[parameters('vmImageOffer')]"
+          },
+          "vmImageSku":{
+            "value": "[parameters('vmImageSku')]"
+          },
+          "vmImageVersion":{
+            "value": "[parameters('vmImageVersion')]"
+          },
+          "timeZone":{
+            "value": "[parameters('timeZone')]"
+          },
+          "dataDiskType":{
+            "value": "[parameters('dataDiskType')]"
+          }
+        }
+      }
+    },
+    {
       "type": "Microsoft.DevTestLab/schedules",
       "name": "[concat('shutdown-computevm-',parameters('vmName'))]",
       "apiVersion": "2018-10-15-preview",
       "location": "[resourceGroup().location]",
-      "tags": {},
       "dependsOn":[
-        "[concat('Microsoft.Compute/virtualMachines/',parameters('vmName'))]"
+        "deployVMWithKV"
       ],
       "properties": {
         "status": "Enabled",
@@ -132,72 +326,8 @@
         "notificationSettings": {
           "status": "Enabled",
           "notificationLocale": "en",
-          "timeInMinutes": "30"
-        }
-      }
-    },
-    {
-      "name": "[parameters('vmName')]",
-      "tags": {
-      },
-      "type": "Microsoft.Compute/virtualMachines",
-      "apiVersion": "2019-07-01",
-      "location": "[resourceGroup().location]",
-      "dependsOn": [
-        "[concat('Microsoft.Network/networkInterfaces/', variables('networkInterfaceName'))]"
-      ],
-      "properties": {
-        "osProfile": {
-          "computerName": "[parameters('vmName')]",
-          "adminUsername": "[parameters('adminUsername')]",
-          "adminPassword": "[parameters('adminPassword')]",
-          "windowsConfiguration": {
-            "provisionVmAgent": true,
-            "enableAutomaticUpdates": true,
-            "timeZone": "[parameters('timeZone')]"
-          }
-        },
-        "hardwareProfile": {
-          "vmSize": "[parameters('vmSize')]"
-        },
-        "storageProfile": {
-          "imageReference": {
-            "publisher": "[parameters('vmImagePublisher')]",
-            "offer": "[parameters('vmImageOffer')]",
-            "sku": "[parameters('vmImageSku')]",
-            "version": "[parameters('vmImageVersion')]"
-          },
-          "osDisk": {
-            "createOption": "FromImage",
-            "name": "[concat(parameters('vmName'),'-osdisk')]",
-            "managedDisk": {
-              "storageAccountType": "StandardSSD_LRS"
-            }
-          },
-          "dataDisks": [
-              {
-                "name": "[concat(parameters('vmName'),'-datadisk-','0')]",
-                "diskSizeGB": "[variables('dataDiskSize')]",
-                "lun": 0,
-                "createOption": "Empty",
-                "managedDisk": {
-                  "storageAccountType": "[parameters('dataDiskType')]"
-                }
-              }
-          ]
-        },
-        "networkProfile": {
-          "networkInterfaces": [
-            {
-              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('vmName'),'-nic'))]"
-            }
-          ]
-        },
-        "diagnosticsProfile": {
-          "bootDiagnostics": {
-            "enabled": true,
-            "storageUri": "[reference(resourceId(parameters('diagnosticsStorageAccountRGName'), 'Microsoft.Storage/storageAccounts', parameters('diagnosticsStorageAccountName')), '2015-06-15').primaryEndpoints['blob']]"
-          }
+          "timeInMinutes": "30",
+          "emailRecipient": "[parameters('autoShutdownAlertRecipient')]"
         }
       }
     },
@@ -207,7 +337,7 @@
         "apiVersion": "2015-06-15",
         "location": "[resourceGroup().location]",
         "dependsOn": [
-            "[concat('Microsoft.Compute/virtualMachines/', parameters('vmName'))]"
+          "deployVMWithKV"
         ],
         "properties": {
             "publisher": "Microsoft.HpcCompute",
@@ -224,7 +354,7 @@
       "apiVersion": "2017-03-30",
       "location": "[resourceGroup().location]",
       "dependsOn": [ 
-        "[concat('Microsoft.Compute/virtualMachines/', parameters('vmName'))]"
+        "deployVMWithKV"
       ],
       "properties": {
         "publisher": "Microsoft.Azure.Security",

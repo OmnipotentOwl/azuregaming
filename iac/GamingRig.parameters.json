@@ -3,7 +3,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "autoShutdownTime": {
-        "value": "19:00"
+        "value": "00:00"
     },
     "vmName":{
         "value": "vm-vdi-video-000"
@@ -43,6 +43,18 @@
     },
     "diagnosticsStorageAccountName":{
         "value": "stdiageastusdemo321"
+    },
+    "vaultResourceGroupName":{
+        "value": "rg-demo-security"
+    },
+    "vaultName":{
+        "value": "kv-demo-vdivid-000"
+    },
+    "adminUsernameSecret":{
+        "value": "LocalAdminUsername"
+    },
+    "adminPasswordSecret":{
+        "value": "LocalAdminPassword"
     }
   }
 }
