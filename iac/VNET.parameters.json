@@ -3,10 +3,10 @@
     "contentVersion": "1.0.0.0",
     "parameters": {
       "vnetName": { 
-        "value": "vnet-demo-eastus-000" 
+        "value": "demo-eastus-000" 
       },
       "subnetName": { 
-        "value": "snet-vdi-video" 
+        "value": "vdi-video" 
       }
     }
 } 
